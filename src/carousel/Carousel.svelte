@@ -1,180 +1,102 @@
 <script lang="ts">
-  /*
-  renders only 3 slides - previous, current and next
-  shows only the current slide
-  when transition to the direction of the next slide starts:
-    - all slides receive the class animation-setup & forward/backward class
-    - forward/backward is responsible for the direction of the animation and animation name, the slide class is also involved,
-      because animation of current slide differs from the animation of the next slide
-      only 2 slides participate in animation - current and next/previous
-      also need to consider z-index - the heap of slides should be in the correct order
-  
-  animation duration should match changing the classes
-    .animation-setup {
-      animation-iteration-count: 1;
-      animation-fill-mode: forwards;
-      animation-timing-function: ease-in-out;
-      animation-duration: 0.5s;
-    }
+  import { tweened } from 'svelte/motion';
+  import { swipe } from 'svelte-gestures';
 
-    .next-slide.forward {
-      transform-origin: 100% 50%;
-      animation-name: next-to-next;
-    }
-    .current-slide.forward {
-      animation-name: current-forward;
-    }
-    for cards alike animation
-    @keyframes next-to-next {
-      0% {
-        transform: rotateY(60deg);
-        opacity: 0;
-      }
-      100% {
-        transform: rotateY(0deg);
-        opacity: 1;
-      }
-    }
-    @keyframes current-to-next {
-      0% {
-        opacity: 1;
-      }
-      100% {
-        opacity: 0;
-        transform: translateY(-50%);
-      }
-    }
+  const array = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+  let pointer = 0;
+  $: current = array[pointer];
+  $: previous = pointer - 1 < 0 ? array[0] : array[pointer - 1];
+  $: next = pointer + 1 > array.length - 1 ? array.at(-1) : array[pointer + 1];
+  const DURATION = 400;
+  const ANGLE = 30;
+  const SHIFT = 50;
 
-    the opposite direction 
-    .previous-slide.backward {
-      animation-name: previous-backward;
-    }
-    .current-slide.backward {
-      transform-origin: 100% 50%;
-      animation-name: current-backward;
-    }
-    @keyframes previous-backward {
-      0% {
-        opacity: 0;
-        transform: translateY(-50%);
-      }
-      100% {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-    @keyframes current-backward {
-      0% {
-        opacity: 1;
-      }
-      100% {
-        opacity: 0;
-        transform: rotateY(-60deg);
-      }
-    }
-
-    animation names can be read as: [slide by order]-[direction] - next-forward, current-forward, current-backwards, previous-backward
-
-    after animation is done, the class animation-setup is removed from all slides
-
-    From algorithm perspective:
-     - we have an array of slides, type doesn't matter
-     - when slide change was called slides receive their classes
-     - after animation finished, classes are removed and previous, current and next slides are updated
-  */
-  
-  /*
-  
-  */
-  import { spring, tweened } from 'svelte/motion'
-  
-  const DURATION = 2000
-  const array = [0, 1, 2, 3, 4]
-  let pointer = 0
-  $: current = array[pointer]
-  $: previous = pointer - 1 < 0 ? array[0] : array[pointer - 1]
-  $: next = pointer + 1 > array.length - 1 ? array.at(-1) : array[pointer + 1]
-  let previousSlideClass = ''
-  let currentSlideClass = ''
-  let nextSlideClass = ''
-  let timeout: number | null = null
-  const goNext = () => {
-    const clearAnimation = () => {
-      pointer = pointer + 1 > array.length - 1 ? pointer : pointer + 1
-      currentSlideClass = ''
-      nextSlideClass = ''
-    }
-    if (timeout) {
-      clearTimeout(timeout)
-    }
-    if (pointer + 1 > array.length - 1) return
-    nextSlideClass = 'animation-setup forward'
-    currentSlideClass = 'animation-setup forward'
-    timeout = setTimeout(clearAnimation, DURATION)
-  }
-  const goPrev = () => {
-    const clearAnimation = () => {
-      pointer = pointer - 1 < 0 ? pointer : pointer - 1
-      currentSlideClass = ''
-      previousSlideClass = ''
-    }
-    if (timeout) {
-      clearTimeout(timeout)
-    }
-    if (pointer - 1 < 0) return
-    previousSlideClass = 'animation-setup backward'
-    currentSlideClass = 'animation-setup backward'
-    timeout = setTimeout(clearAnimation, DURATION)
-  }
-
-  const progress = tweened(0, {
+  let fExpected = pointer;
+  let bExpected = pointer;
+  const fProgress = tweened(0, {
     duration: DURATION,
-  })
-  const increase = () => {
-    pointer = pointer + 1 > array.length - 1 ? pointer : pointer + 1
-  }
-  const goNextTweened = async () => {
-    if (timeout && pointer !== array.length - 2) {
-      clearTimeout(timeout)
-      increase()
+  });
+  const bProgress = tweened(0, {
+    duration: DURATION,
+  });
+  const goForward = async () => {
+    if (fExpected === array.length - 1) {
+      return;
     }
-    if (pointer + 1 > array.length - 1) {
-      return
-    }
-    timeout = setTimeout(() => {
-      increase()
-      timeout = null
-    }, DURATION)
-    await progress.set(0, { duration: 0 })
-    await progress.set(1)
-    await progress.set(0, { duration: 0 })
-  }
+    await bProgress.set(0, { duration: 0 });
+    pointer = fExpected;
+    fExpected += 1;
+    bExpected = fExpected;
+    await fProgress.set(0, { duration: 0 });
+    await fProgress.set(1);
+    await fProgress.set(0, { duration: 0 });
+    pointer = fExpected;
+  };
 
-  const goPrevTweened = async () => {
-    await progress.set(1, { duration: 0 })
-    await progress.set(0)
+  const goBackward = async () => {
+    if (bExpected === 0) {
+      return;
+    }
+    await fProgress.set(0, { duration: 0 });
+    pointer = bExpected;
+    bExpected -= 1;
+    fExpected = bExpected;
+    await bProgress.set(0, { duration: 0 });
+    await bProgress.set(1);
+    await bProgress.set(0, { duration: 0 });
+    pointer = bExpected;
+  };
+  const handleSwipe = (event: CustomEvent<{
+    direction: 'top' | 'right' | 'bottom' | 'left';
+    target: EventTarget;
+  }>) => {
+    console.log(event.detail)
+    const { direction } = event.detail;
+    if (direction === 'left') {
+      goForward();
+    } else if (direction === 'right') {
+      goBackward();
+    }
   }
 </script>
+
 <div>pointer: {pointer}</div>
-<div class="slider">
+<div
+  class="slider"
+  use:swipe
+  on:swipe={handleSwipe}
+>
+  <div class="slide previous-slide" style:opacity={$bProgress}>{previous}</div>
   <div
-    class="slide previous-slide {previousSlideClass}">{previous}</div>
+    class="slide current-slide"
+    style:transform={`
+      rotateY(${-ANGLE * $bProgress}deg)
+      translateX(${SHIFT * $bProgress}%)
+    `}
+    style:opacity={1 - $bProgress}
+  >
+    {current}
+  </div>
   <div
-    class="slide current-slide {currentSlideClass}"
-  >{current}</div>
-  <div
-    class="slide next-slide {nextSlideClass}"
-    style:transform={`rotateY(${60 - 60 * $progress}deg)`}
-    style:opacity={$progress}
-  >{next}</div>
+    class="slide next-slide"
+    style:transform={`
+      rotateY(${-ANGLE + ANGLE * $fProgress}deg)
+      translateX(${SHIFT - SHIFT * $fProgress}%)
+    `}
+    style:opacity={$fProgress}
+  >
+    {next}
+  </div>
 </div>
 <div class="controls">
-  <button on:click={goPrevTweened}>previous</button>
-  <button on:click={goNextTweened}>next</button>
+  <button on:click={goBackward}>previous</button>
+  <button on:click={goForward}>next</button>
 </div>
+
 <style>
   .slider {
     height: 400px;
+    width: 200px;
     perspective: 2000px;
     position: relative;
   }
@@ -183,6 +105,10 @@
     background-color: #60a87f;
   }
   .next-slide {
+    transform-origin: 50% 50%;
+    border: 1px solid red;
+  }
+  .current-slide {
     transform-origin: 100% 50%;
   }
   .previous-slide,
@@ -194,70 +120,16 @@
     width: 100%;
     height: 100%;
   }
-  .animation-setup {
-    animation-iteration-count: 1;
-    animation-fill-mode: forwards;
-    animation-timing-function: ease-in-out;
-    animation-duration: 2s;
-  }
-  .next-slide.forward {
-    transform-origin: 100% 50%;
-    animation-name: next-forward;
-  }
-  .current-slide.forward {
-    animation-name: current-forward;
-  }
-
-  @keyframes next-forward {
-    0% {
-      transform: rotateY(60deg);
-      opacity: 0;
-    }
-    100% {
-      transform: rotateY(0deg);
-      opacity: 1;
-    }
-  }
-  @keyframes current-forward {
-    0% {
-      opacity: 1;
-    }
-    100% {
-      opacity: 0;
-      transform: translateX(-20%);
-    }
-  }
-
-  .previous-slide.backward {
-    animation-name: previous-backward;
-  }
-  .current-slide.backward {
-    transform-origin: 100% 50%;
-    animation-name: current-backward;
-  }
-  @keyframes previous-backward {
-    0% {
-      opacity: 0;
-      transform: translateX(-20%);
-    }
-    100% {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-  @keyframes current-backward {
-    0% {
-      opacity: 1;
-    }
-    100% {
-      opacity: 0;
-      transform: rotateY(60deg);
-    }
-  }
+  
   .controls {
     display: flex;
     margin-top: 1rem;
     justify-content: flex-end;
     gap: 1rem;
+    position: relative;
+    z-index: 100;
+  }
+  .controls button {
+    font-size: 3rem;
   }
 </style>
